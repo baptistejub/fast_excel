@@ -86,13 +86,16 @@ module FastExcel
   XLSX_DATE_EPOCH_DIFF = 25569
 
   # Convert time to number of days, and change beginning point from 1st jan 1970 to 1st jan 1900
-  # Offset argument should be number of seconds, if not specified then it will use Time.zone.utc_offset || 0
-  #
+  # Offset argument should be number of seconds, if not specified then it will use time.utc_offset or Time.zone.utc_offset or 0
+  # Prioritize time.utc_offset because rails timezone utc_offset doesn't include DST (but Time or DateTime object does)
   # https://support.microsoft.com/en-us/help/214330/differences-between-the-1900-and-the-1904-date-system-in-excel
   def self.date_num(time, offset = nil)
     unless offset
+      # Try time offset first
+      if time.respond_to?(:utc_offset)
+        offset = time.utc_offset
       # Try use Rails' app timezone
-      if Time.respond_to?(:zone)
+      elsif Time.respond_to?(:zone)
         offset = Time.zone.utc_offset
       else
         offset = 0 # rollback to UTC
@@ -446,12 +449,14 @@ module FastExcel
 
       if value.is_a?(Numeric)
         write_number(row_number, cell_number, value, format)
+      elsif value.is_a?(Time)
+        if value.respond_to?(:to_datetime)
+          write_datetime(row_number, cell_number, FastExcel.lxw_datetime(value.to_datetime), format)
+        else
+          write_number(row_number, cell_number, FastExcel.date_num(value), format)
+        end
       elsif defined?(Date) && value.is_a?(Date)
         write_datetime(row_number, cell_number, FastExcel.lxw_datetime(value.to_datetime), format)
-      elsif value.is_a?(Time)
-        write_number(row_number, cell_number, FastExcel.date_num(value), format)
-      elsif defined?(DateTime) && value.is_a?(DateTime)
-        write_number(row_number, cell_number, FastExcel.date_num(value), format)
       elsif value.is_a?(TrueClass) || value.is_a?(FalseClass)
         write_boolean(row_number, cell_number, value ? 1 : 0, format)
       elsif value.is_a?(FastExcel::Formula)
